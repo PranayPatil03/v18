@@ -1,0 +1,242 @@
+@page "/workflow-json/validations"
+@page "/validations"
+@rendermode InteractiveServer
+@inject FrameworkApiClient Api
+@inject ISnackbar Snackbar
+
+<div class="admin-page">
+    <div class="crumb">Workflow JSON / Validations</div>
+
+    <MudPaper Class="admin-card" Elevation="0">
+        <div class="admin-title-row">
+            <div>
+                <MudText Typo="Typo.h5">Validations</MudText>
+                <MudText Typo="Typo.body2" Class="muted">
+                    Validation definitions are master data stored in the database and published into workflow JSON.
+                </MudText>
+            </div>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="string.IsNullOrWhiteSpace(WorkflowCode)"
+                       OnClick="AddValidation">
+                Add Validation
+            </MudButton>
+        </div>
+
+        <MudSelect T="string"
+                   Value="WorkflowCode"
+                   ValueChanged="ChangeWorkflow"
+                   Label="Workflow"
+                   Variant="Variant.Outlined"
+                   Class="mb-4">
+            @foreach (var workflow in Workflows)
+            {
+                <MudSelectItem Value="@workflow.WorkflowCode">
+                    @workflow.WorkflowName
+                </MudSelectItem>
+            }
+        </MudSelect>
+
+        @if (Definition is not null)
+        {
+            <MudTable Items="Definition.Validations"
+                      Dense="true"
+                      Hover="true"
+                      Class="admin-table">
+                <HeaderContent>
+                    <MudTh>Order</MudTh>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Expression</MudTh>
+                    <MudTh>Error Message</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+                    <MudTd>@context.DisplayOrder</MudTd>
+                    <MudTd>@context.ValidationName</MudTd>
+                    <MudTd>
+                        <code>@context.Expression</code>
+                    </MudTd>
+                    <MudTd>@context.ErrorMessage</MudTd>
+                    <MudTd>
+                        <MudButton Size="Size.Small"
+                                   Variant="Variant.Outlined"
+                                   OnClick="() => EditValidation(context)">
+                            Edit
+                        </MudButton>
+
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       OnClick="() => DeleteValidation(context)" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @if (Editing is not null)
+            {
+                <div class="editor-panel">
+                    <MudText Typo="Typo.h6">Validation Definition</MudText>
+
+                    <div class="admin-grid-2">
+                        <MudTextField @bind-Value="Editing.ValidationName"
+                                      Label="Validation Name"
+                                      Variant="Variant.Outlined" />
+
+                        <MudNumericField T="int"
+                                         @bind-Value="Editing.DisplayOrder"
+                                         Label="Display Order"
+                                         Variant="Variant.Outlined" />
+                    </div>
+
+                    <MudTextField @bind-Value="Editing.Expression"
+                                  Label="Validation Expression"
+                                  Variant="Variant.Outlined"
+                                  Class="mt-3" />
+
+                    <MudTextField @bind-Value="Editing.ErrorMessage"
+                                  Label="Error Message"
+                                  Variant="Variant.Outlined"
+                                  Class="mt-3" />
+
+                    <div class="editor-actions">
+                        <MudButton Variant="Variant.Text"
+                                   OnClick="CancelEdit">
+                            Cancel
+                        </MudButton>
+
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   OnClick="SaveValidation">
+                            Save Validation
+                        </MudButton>
+                    </div>
+                </div>
+            }
+        }
+    </MudPaper>
+</div>
+
+@code {
+    private List<WorkflowDto> Workflows = [];
+    private string WorkflowCode = string.Empty;
+    private WorkflowDefinitionDto? Definition;
+    private WorkflowJsonValidationDto? Editing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Workflows = await Api.GetWorkflowsAsync();
+        WorkflowCode = Workflows.FirstOrDefault()?.WorkflowCode ?? string.Empty;
+        await Load();
+    }
+
+    private async Task ChangeWorkflow(string value)
+    {
+        WorkflowCode = value;
+        Editing = null;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        Definition = string.IsNullOrWhiteSpace(WorkflowCode)
+            ? null
+            : await Api.GetWorkflowDefinitionAsync(WorkflowCode);
+    }
+
+    private void AddValidation()
+    {
+        Editing = new WorkflowJsonValidationDto
+        {
+            ValidationName = string.Empty,
+            Expression = "true",
+            ErrorMessage = "Validation failed.",
+            DisplayOrder = (Definition?.Validations.Count ?? 0) + 1
+        };
+    }
+
+    private void EditValidation(WorkflowJsonValidationDto validation)
+    {
+        Editing = System.Text.Json.JsonSerializer.Deserialize<WorkflowJsonValidationDto>(
+            System.Text.Json.JsonSerializer.Serialize(validation));
+    }
+
+    private void CancelEdit()
+    {
+        Editing = null;
+    }
+
+    private async Task DeleteValidation(WorkflowJsonValidationDto validation)
+    {
+        if (Definition is null)
+            return;
+
+        Definition.Validations.Remove(validation);
+        await SaveDefinition("Validation deleted.");
+    }
+
+    private async Task SaveValidation()
+    {
+        if (Definition is null || Editing is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(Editing.ValidationName)
+            || string.IsNullOrWhiteSpace(Editing.Expression))
+        {
+            Snackbar.Add("Validation name and expression are required.", Severity.Warning);
+            return;
+        }
+
+        var duplicate = Definition.Validations.Any(
+            x => x != Editing
+                && x.ValidationName.Equals(
+                    Editing.ValidationName,
+                    StringComparison.OrdinalIgnoreCase));
+
+        if (duplicate)
+        {
+            Snackbar.Add("Validation name already exists.", Severity.Warning);
+            return;
+        }
+
+        var existing = Definition.Validations.FirstOrDefault(
+            x => x.ValidationName.Equals(
+                Editing.ValidationName,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (existing is null)
+        {
+            Definition.Validations.Add(Editing);
+        }
+        else
+        {
+            var index = Definition.Validations.IndexOf(existing);
+            Definition.Validations[index] = Editing;
+        }
+
+        await SaveDefinition("Validation saved.");
+        Editing = null;
+    }
+
+    private async Task SaveDefinition(string message)
+    {
+        var result = await Api.SaveWorkflowDefinitionAsync(
+            new SaveWorkflowDefinitionRequest
+            {
+                WorkflowCode = WorkflowCode,
+                VersionName = $"{DateTime.Today:dd-MMM-yyyy} - Draft",
+                Status = "Draft",
+                IsPublished = false,
+                Definition = Definition!
+            });
+
+        if (result is not null)
+        {
+            Snackbar.Add(
+                $"{message} Version {result.VersionNo} created.",
+                Severity.Success);
+        }
+
+        await Load();
+    }
+}

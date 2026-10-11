@@ -1,0 +1,87 @@
+@page "/workflow-json/new"
+@rendermode InteractiveServer
+@inject FrameworkApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<div class="admin-page">
+    <div class="crumb">Workflow JSON / New Workflow</div>
+
+    <MudPaper Class="admin-card" Elevation="0">
+        <div class="admin-title-row">
+            <div>
+                <MudText Typo="Typo.h5">Create New Workflow</MudText>
+                <MudText Typo="Typo.body2" Class="muted">
+                    Create a blank workflow. Version 1 is automatically created as a skeleton JSON definition.
+                </MudText>
+            </div>
+        </div>
+
+        <div class="admin-grid-2">
+            <MudTextField @bind-Value="WorkflowCode"
+                          Label="Workflow Code"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+
+            <MudTextField @bind-Value="WorkflowName"
+                          Label="Workflow Name"
+                          Variant="Variant.Outlined"
+                          Required="true" />
+        </div>
+
+        <div class="editor-actions">
+            <MudButton Variant="Variant.Text"
+                       OnClick="Cancel">
+                Cancel
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="Create">
+                Create Workflow
+            </MudButton>
+        </div>
+    </MudPaper>
+</div>
+
+@code {
+    private string WorkflowCode = string.Empty;
+    private string WorkflowName = string.Empty;
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/workflow-json");
+    }
+
+    private async Task Create()
+    {
+        if (string.IsNullOrWhiteSpace(WorkflowCode) || string.IsNullOrWhiteSpace(WorkflowName))
+        {
+            Snackbar.Add("Workflow code and workflow name are required.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var workflow = await Api.CreateWorkflowAsync(
+                new CreateWorkflowRequest
+                {
+                    WorkflowCode = WorkflowCode.Trim(),
+                    WorkflowName = WorkflowName.Trim()
+                });
+
+            if (workflow is null)
+            {
+                Snackbar.Add("Workflow could not be created.", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add("Workflow created with skeleton JSON Version 1.", Severity.Success);
+            Navigation.NavigateTo("/workflow-json");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Workflow could not be created: {ex.Message}", Severity.Error);
+        }
+    }
+}
